@@ -2,24 +2,25 @@ services:
   - type: web
     name: ms365-mcp
     env: node
-    plan: starter           # "free" kan ook, maar slaapt
+    plan: starter
     region: frankfurt
     buildCommand: |
       npm ci
+      npm run generate:graph || npm run generate || npm run codegen || npm run gen || true
       npm run build
     startCommand: |
       node dist/index.js --http 10000 --org-mode
     autoDeploy: true
     healthCheckPath: /
     envVars:
-      - key: NODE_VERSION        # vervangt nodeVersion
+      - key: NODE_VERSION
         value: 20
       - key: MS365_MCP_CLIENT_ID
         sync: false
       - key: MS365_MCP_CLIENT_SECRET
         sync: false
       - key: MS365_MCP_TENANT_ID
-        value: common            # of je tenant-id
+        value: common
       - key: READ_ONLY
         value: "1"
       - key: ENABLED_TOOLS
