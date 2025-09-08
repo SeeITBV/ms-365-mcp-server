@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: ms365-mcp
+    env: node
+    plan: starter       # "free" kan ook voor testen, maar slaapt
+    region: frankfurt   # dichtst bij BE
+    buildCommand: |
+      npm ci
+      npm run build
+    startCommand: |
+      node dist/index.js --http 10000 --org-mode
+    autoDeploy: true
+    runtime: node
+    nodeVersion: 20
+    envVars:
+      - key: MS365_MCP_CLIENT_ID
+        sync: false
+      - key: MS365_MCP_CLIENT_SECRET
+        sync: false
+      - key: MS365_MCP_TENANT_ID
+        value: common           # of je tenant-id (aanrader voor prod)
+      - key: READ_ONLY
+        value: "1"              # veilig starten
+      - key: ENABLED_TOOLS
+        value: mail|calendar|files|excel
+      - key: LOG_LEVEL
+        value: info
+    healthCheckPath: /           # laat staan; server heeft geen aparte /health
+    autoScale:
+      minInstances: 1
+      maxInstances: 1
