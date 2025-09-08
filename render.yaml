@@ -9,7 +9,7 @@ services:
       npm run generate:graph || npm run generate || npm run codegen || npm run gen || true
       npm run build
     startCommand: |
-      node dist/index.js --http 10000 --org-mode
+      node dist/index.js --http 10000 --org-mode --enable-auth-tools
     autoDeploy: true
     healthCheckPath: /
     envVars:
