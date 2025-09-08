@@ -419,7 +419,7 @@ class MicrosoftGraphServer {
         ) => {
           try {
             logger.info('Establishing SSE connection');
-            
+
             // Set OAuth tokens in the GraphClient if available
             if (req.microsoftAuth) {
               this.graphClient.setOAuthTokens(
@@ -430,10 +430,10 @@ class MicrosoftGraphServer {
 
             // Create SSE transport with the messages endpoint
             const transport = new SSEServerTransport('/messages', res);
-            
+
             // Store transport by session ID
             sseTransports.set(transport.sessionId, transport);
-            
+
             // Clean up transport when connection closes
             res.on('close', () => {
               logger.info(`SSE connection closed for session ${transport.sessionId}`);
@@ -443,7 +443,7 @@ class MicrosoftGraphServer {
 
             // Connect server to transport
             await this.server!.connect(transport);
-            
+
             logger.info(`SSE connection established with session ID: ${transport.sessionId}`);
           } catch (error) {
             logger.error('Error establishing SSE connection:', error);
@@ -471,7 +471,7 @@ class MicrosoftGraphServer {
         ) => {
           try {
             const sessionId = req.query.sessionId as string;
-            
+
             if (!sessionId) {
               res.status(400).json({
                 jsonrpc: '2.0',
