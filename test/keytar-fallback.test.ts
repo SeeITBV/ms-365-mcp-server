@@ -41,7 +41,7 @@ describe('Keytar fallback functionality', () => {
 
   it('should handle token cache operations gracefully when keytar is unavailable', async () => {
     const authManager = new AuthManager();
-    
+
     // These operations should not throw errors even when keytar is unavailable
     await expect(authManager.loadTokenCache()).resolves.not.toThrow();
     await expect(authManager.saveTokenCache()).resolves.not.toThrow();
@@ -49,7 +49,7 @@ describe('Keytar fallback functionality', () => {
 
   it('should handle logout gracefully when keytar is unavailable', async () => {
     const authManager = new AuthManager();
-    
+
     // Logout should not throw errors even when keytar is unavailable
     await expect(authManager.logout()).resolves.toBe(true);
   });
