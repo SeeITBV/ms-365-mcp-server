@@ -35,6 +35,25 @@ export const microsoftBearerTokenAuthMiddleware = (
 };
 
 /**
+ * Conditional auth middleware that skips authentication for SSE routes
+ * while requiring it for all other routes
+ */
+export const conditionalAuthMiddleware = (
+  req: Request & { microsoftAuth?: { accessToken: string; refreshToken: string } },
+  res: Response,
+  next: NextFunction
+): void => {
+  // Skip auth for SSE-related routes
+  if (req.path === '/sse' || req.path.startsWith('/messages')) {
+    next();
+    return;
+  }
+
+  // Apply normal auth for all other routes
+  microsoftBearerTokenAuthMiddleware(req, res, next);
+};
+
+/**
  * Exchange authorization code for access token
  */
 export async function exchangeCodeForToken(

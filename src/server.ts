@@ -14,6 +14,7 @@ import { MicrosoftOAuthProvider } from './oauth-provider.js';
 import {
   exchangeCodeForToken,
   microsoftBearerTokenAuthMiddleware,
+  conditionalAuthMiddleware,
   refreshAccessToken,
 } from './lib/microsoft-auth.js';
 import type { CommandOptions } from './cli.ts';
@@ -99,12 +100,22 @@ class MicrosoftGraphServer {
 
       // Add CORS headers for all routes
       app.use((req, res, next) => {
-        res.header('Access-Control-Allow-Origin', '*');
-        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        res.header(
-          'Access-Control-Allow-Headers',
-          'Origin, X-Requested-With, Content-Type, Accept, Authorization, mcp-protocol-version'
-        );
+        // More permissive CORS for SSE routes
+        if (req.path === '/sse' || req.path.startsWith('/messages')) {
+          res.header('Access-Control-Allow-Origin', '*');
+          res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+          res.header(
+            'Access-Control-Allow-Headers',
+            'Content-Type, Authorization, mcp-protocol-version'
+          );
+        } else {
+          res.header('Access-Control-Allow-Origin', '*');
+          res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+          res.header(
+            'Access-Control-Allow-Headers',
+            'Origin, X-Requested-With, Content-Type, Accept, Authorization, mcp-protocol-version'
+          );
+        }
 
         // Handle preflight requests
         if (req.method === 'OPTIONS') {
@@ -412,7 +423,7 @@ class MicrosoftGraphServer {
       // GET /sse - Establish SSE stream (HTTP+SSE protocol version 2024-11-05)
       app.get(
         '/sse',
-        microsoftBearerTokenAuthMiddleware,
+        conditionalAuthMiddleware,
         async (
           req: Request & { microsoftAuth?: { accessToken: string; refreshToken: string } },
           res: Response
@@ -464,7 +475,7 @@ class MicrosoftGraphServer {
       // POST /messages - Handle SSE messages (HTTP+SSE protocol version 2024-11-05)
       app.post(
         '/messages',
-        microsoftBearerTokenAuthMiddleware,
+        conditionalAuthMiddleware,
         async (
           req: Request & { microsoftAuth?: { accessToken: string; refreshToken: string } },
           res: Response
@@ -537,6 +548,7 @@ class MicrosoftGraphServer {
         logger.info(
           `  - OAuth discovery: http://localhost:${port}/.well-known/oauth-authorization-server`
         );
+        logger.info('MCP SSE open at /sse (no HTTP auth); Graph tools require in-app login.');
       });
     } else {
       const transport = new StdioServerTransport();
