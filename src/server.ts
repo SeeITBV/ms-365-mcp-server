@@ -33,7 +33,7 @@ interface RegisteredClient {
 
 const registeredClients = new Map<string, RegisteredClient>();
 
-// Store SSE transports by session ID for the SSE transport
+// SSE transport instances mapped by session ID for MCP communication
 const sseTransports = new Map<string, SSEServerTransport>();
 
 class MicrosoftGraphServer {
@@ -419,8 +419,18 @@ class MicrosoftGraphServer {
         }
       );
 
-      // SSE Transport Endpoints for ChatGPT Custom Connector compatibility
-      // GET /sse - Establish SSE stream (HTTP+SSE protocol version 2024-11-05)
+      // SSE Transport for ChatGPT Custom Connector compatibility  
+      // Configuration for SSE transports (reused for each connection)
+      const sseTransportConfig = {
+        keepAlive: 15000,
+        cors: {
+          origin: "*",
+          methods: ["GET", "POST", "OPTIONS"],
+          allowedHeaders: ["Content-Type", "Authorization", "mcp-protocol-version"],
+        },
+      };
+
+      // GET /sse - Establish SSE stream using official transport
       app.get(
         '/sse',
         conditionalAuthMiddleware,
@@ -439,21 +449,24 @@ class MicrosoftGraphServer {
               );
             }
 
-            // Create SSE transport with the messages endpoint
-            const transport = new SSEServerTransport('/messages', res);
-
+            // Create a new SSE transport for this connection
+            const transport = new SSEServerTransport("/sse", res, sseTransportConfig);
+            
             // Store transport by session ID
             sseTransports.set(transport.sessionId, transport);
-
+            
             // Clean up transport when connection closes
             res.on('close', () => {
               logger.info(`SSE connection closed for session ${transport.sessionId}`);
               sseTransports.delete(transport.sessionId);
               transport.close();
             });
-
+            
             // Connect server to transport
             await this.server!.connect(transport);
+            
+            // Start the SSE stream
+            await transport.start();
 
             logger.info(`SSE connection established with session ID: ${transport.sessionId}`);
           } catch (error) {
@@ -472,17 +485,26 @@ class MicrosoftGraphServer {
         }
       );
 
-      // POST /messages - Handle SSE messages (HTTP+SSE protocol version 2024-11-05)
+      // POST /sse - Handle SSE messages using official transport
       app.post(
-        '/messages',
+        '/sse',
         conditionalAuthMiddleware,
         async (
           req: Request & { microsoftAuth?: { accessToken: string; refreshToken: string } },
           res: Response
         ) => {
           try {
-            const sessionId = req.query.sessionId as string;
+            // Set OAuth tokens in the GraphClient if available
+            if (req.microsoftAuth) {
+              this.graphClient.setOAuthTokens(
+                req.microsoftAuth.accessToken,
+                req.microsoftAuth.refreshToken
+              );
+            }
 
+            // Get session ID from query params
+            const sessionId = req.query.sessionId as string;
+            
             if (!sessionId) {
               res.status(400).json({
                 jsonrpc: '2.0',
@@ -495,6 +517,7 @@ class MicrosoftGraphServer {
               return;
             }
 
+            // Get the transport for this session
             const transport = sseTransports.get(sessionId);
             if (!transport) {
               res.status(404).json({
@@ -506,14 +529,6 @@ class MicrosoftGraphServer {
                 id: null,
               });
               return;
-            }
-
-            // Set OAuth tokens in the GraphClient if available
-            if (req.microsoftAuth) {
-              this.graphClient.setOAuthTokens(
-                req.microsoftAuth.accessToken,
-                req.microsoftAuth.refreshToken
-              );
             }
 
             // Handle the POST message using the SSE transport
@@ -543,7 +558,6 @@ class MicrosoftGraphServer {
         logger.info(`Server listening on HTTP port ${port}`);
         logger.info(`  - MCP endpoint: http://localhost:${port}/mcp`);
         logger.info(`  - SSE endpoint: http://localhost:${port}/sse`);
-        logger.info(`  - SSE messages: http://localhost:${port}/messages`);
         logger.info(`  - OAuth endpoints: http://localhost:${port}/auth/*`);
         logger.info(
           `  - OAuth discovery: http://localhost:${port}/.well-known/oauth-authorization-server`
