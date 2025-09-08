@@ -420,18 +420,7 @@ class MicrosoftGraphServer {
       );
 
       // SSE Transport for ChatGPT Custom Connector compatibility  
-      // Create official SSE transport with SDK configuration
-      sseTransport = new SSEServerTransport("/sse", undefined, {
-        keepAlive: 15000,
-        cors: {
-          origin: "*",
-          methods: ["GET", "POST", "OPTIONS"],
-          allowedHeaders: ["Content-Type", "Authorization", "mcp-protocol-version"],
-        },
-      });
-
-      // SSE Transport for ChatGPT Custom Connector compatibility  
-      // Note: We create individual transports per connection, but can reuse the config
+      // Configuration for SSE transports (reused for each connection)
       const sseTransportConfig = {
         keepAlive: 15000,
         cors: {
