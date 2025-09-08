@@ -1,6 +1,5 @@
 import type { AccountInfo, Configuration } from '@azure/msal-node';
 import { PublicClientApplication } from '@azure/msal-node';
-import keytar from 'keytar';
 import logger from './logger.js';
 import fs, { existsSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -49,6 +48,17 @@ const SCOPE_HIERARCHY: ScopeHierarchy = {
   'Tasks.ReadWrite': ['Tasks.Read'],
   'Contacts.ReadWrite': ['Contacts.Read'],
 };
+
+// Optional keytar loading - gracefully handle missing native dependencies
+async function loadKeytar() {
+  try {
+    const keytarModule = await import('keytar');
+    return keytarModule.default;
+  } catch (error) {
+    logger.debug(`Keytar not available: ${(error as Error).message}`);
+    return null;
+  }
+}
 
 function buildScopesFromEndpoints(includeWorkAccountScopes: boolean = false): string[] {
   const scopesSet = new Set<string>();
@@ -121,9 +131,12 @@ class AuthManager {
       let cacheData: string | undefined;
 
       try {
-        const cachedData = await keytar.getPassword(SERVICE_NAME, TOKEN_CACHE_ACCOUNT);
-        if (cachedData) {
-          cacheData = cachedData;
+        const keytar = await loadKeytar();
+        if (keytar) {
+          const cachedData = await keytar.getPassword(SERVICE_NAME, TOKEN_CACHE_ACCOUNT);
+          if (cachedData) {
+            cacheData = cachedData;
+          }
         }
       } catch (keytarError) {
         logger.warn(
@@ -151,9 +164,12 @@ class AuthManager {
       let selectedAccountData: string | undefined;
 
       try {
-        const cachedData = await keytar.getPassword(SERVICE_NAME, SELECTED_ACCOUNT_KEY);
-        if (cachedData) {
-          selectedAccountData = cachedData;
+        const keytar = await loadKeytar();
+        if (keytar) {
+          const cachedData = await keytar.getPassword(SERVICE_NAME, SELECTED_ACCOUNT_KEY);
+          if (cachedData) {
+            selectedAccountData = cachedData;
+          }
         }
       } catch (keytarError) {
         logger.warn(
@@ -180,7 +196,13 @@ class AuthManager {
       const cacheData = this.msalApp.getTokenCache().serialize();
 
       try {
-        await keytar.setPassword(SERVICE_NAME, TOKEN_CACHE_ACCOUNT, cacheData);
+        const keytar = await loadKeytar();
+        if (keytar) {
+          await keytar.setPassword(SERVICE_NAME, TOKEN_CACHE_ACCOUNT, cacheData);
+        } else {
+          // No keytar available, fall back to file storage immediately
+          fs.writeFileSync(FALLBACK_PATH, cacheData);
+        }
       } catch (keytarError) {
         logger.warn(
           `Keychain save failed, falling back to file storage: ${(keytarError as Error).message}`
@@ -198,7 +220,13 @@ class AuthManager {
       const selectedAccountData = JSON.stringify({ accountId: this.selectedAccountId });
 
       try {
-        await keytar.setPassword(SERVICE_NAME, SELECTED_ACCOUNT_KEY, selectedAccountData);
+        const keytar = await loadKeytar();
+        if (keytar) {
+          await keytar.setPassword(SERVICE_NAME, SELECTED_ACCOUNT_KEY, selectedAccountData);
+        } else {
+          // No keytar available, fall back to file storage immediately
+          fs.writeFileSync(SELECTED_ACCOUNT_PATH, selectedAccountData);
+        }
       } catch (keytarError) {
         logger.warn(
           `Keychain save failed for selected account, falling back to file storage: ${(keytarError as Error).message}`
@@ -377,8 +405,11 @@ class AuthManager {
       this.selectedAccountId = null;
 
       try {
-        await keytar.deletePassword(SERVICE_NAME, TOKEN_CACHE_ACCOUNT);
-        await keytar.deletePassword(SERVICE_NAME, SELECTED_ACCOUNT_KEY);
+        const keytar = await loadKeytar();
+        if (keytar) {
+          await keytar.deletePassword(SERVICE_NAME, TOKEN_CACHE_ACCOUNT);
+          await keytar.deletePassword(SERVICE_NAME, SELECTED_ACCOUNT_KEY);
+        }
       } catch (keytarError) {
         logger.warn(`Keychain deletion failed: ${(keytarError as Error).message}`);
       }
