@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
@@ -30,6 +31,9 @@ interface RegisteredClient {
 }
 
 const registeredClients = new Map<string, RegisteredClient>();
+
+// Store SSE transports by session ID for the SSE transport
+const sseTransports = new Map<string, SSEServerTransport>();
 
 class MicrosoftGraphServer {
   private authManager: AuthManager;
@@ -404,6 +408,121 @@ class MicrosoftGraphServer {
         }
       );
 
+      // SSE Transport Endpoints for ChatGPT Custom Connector compatibility
+      // GET /sse - Establish SSE stream (HTTP+SSE protocol version 2024-11-05)
+      app.get(
+        '/sse',
+        microsoftBearerTokenAuthMiddleware,
+        async (
+          req: Request & { microsoftAuth?: { accessToken: string; refreshToken: string } },
+          res: Response
+        ) => {
+          try {
+            logger.info('Establishing SSE connection');
+            
+            // Set OAuth tokens in the GraphClient if available
+            if (req.microsoftAuth) {
+              this.graphClient.setOAuthTokens(
+                req.microsoftAuth.accessToken,
+                req.microsoftAuth.refreshToken
+              );
+            }
+
+            // Create SSE transport with the messages endpoint
+            const transport = new SSEServerTransport('/messages', res);
+            
+            // Store transport by session ID
+            sseTransports.set(transport.sessionId, transport);
+            
+            // Clean up transport when connection closes
+            res.on('close', () => {
+              logger.info(`SSE connection closed for session ${transport.sessionId}`);
+              sseTransports.delete(transport.sessionId);
+              transport.close();
+            });
+
+            // Connect server to transport
+            await this.server!.connect(transport);
+            
+            logger.info(`SSE connection established with session ID: ${transport.sessionId}`);
+          } catch (error) {
+            logger.error('Error establishing SSE connection:', error);
+            if (!res.headersSent) {
+              res.status(500).json({
+                jsonrpc: '2.0',
+                error: {
+                  code: -32603,
+                  message: 'Internal server error establishing SSE connection',
+                },
+                id: null,
+              });
+            }
+          }
+        }
+      );
+
+      // POST /messages - Handle SSE messages (HTTP+SSE protocol version 2024-11-05)
+      app.post(
+        '/messages',
+        microsoftBearerTokenAuthMiddleware,
+        async (
+          req: Request & { microsoftAuth?: { accessToken: string; refreshToken: string } },
+          res: Response
+        ) => {
+          try {
+            const sessionId = req.query.sessionId as string;
+            
+            if (!sessionId) {
+              res.status(400).json({
+                jsonrpc: '2.0',
+                error: {
+                  code: -32602,
+                  message: 'Missing sessionId parameter',
+                },
+                id: null,
+              });
+              return;
+            }
+
+            const transport = sseTransports.get(sessionId);
+            if (!transport) {
+              res.status(404).json({
+                jsonrpc: '2.0',
+                error: {
+                  code: -32001,
+                  message: `No SSE session found for sessionId: ${sessionId}`,
+                },
+                id: null,
+              });
+              return;
+            }
+
+            // Set OAuth tokens in the GraphClient if available
+            if (req.microsoftAuth) {
+              this.graphClient.setOAuthTokens(
+                req.microsoftAuth.accessToken,
+                req.microsoftAuth.refreshToken
+              );
+            }
+
+            // Handle the POST message using the SSE transport
+            await transport.handlePostMessage(req as any, res as any, req.body);
+          } catch (error) {
+            logger.error('Error handling SSE message:', error);
+            if (!res.headersSent) {
+              res.status(500).json({
+                jsonrpc: '2.0',
+                error: {
+                  code: -32603,
+                  message: 'Internal server error handling SSE message',
+                },
+                id: null,
+              });
+            }
+          }
+        }
+      );
+
       // Health check endpoint
       app.get('/', (req, res) => {
         res.send('Microsoft 365 MCP Server is running');
@@ -412,6 +531,8 @@ class MicrosoftGraphServer {
       app.listen(port, () => {
         logger.info(`Server listening on HTTP port ${port}`);
         logger.info(`  - MCP endpoint: http://localhost:${port}/mcp`);
+        logger.info(`  - SSE endpoint: http://localhost:${port}/sse`);
+        logger.info(`  - SSE messages: http://localhost:${port}/messages`);
         logger.info(`  - OAuth endpoints: http://localhost:${port}/auth/*`);
         logger.info(
           `  - OAuth discovery: http://localhost:${port}/.well-known/oauth-authorization-server`
