@@ -44,7 +44,7 @@ export const conditionalAuthMiddleware = (
   next: NextFunction
 ): void => {
   // Skip auth for SSE-related routes
-  if (req.path === '/sse' || req.path.startsWith('/messages')) {
+  if (req.path === '/sse') {
     next();
     return;
   }
