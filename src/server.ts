@@ -101,13 +101,14 @@ class MicrosoftGraphServer {
       // Add CORS headers for all routes
       app.use((req, res, next) => {
         // More permissive CORS for SSE routes
-        if (req.path === '/sse' || req.path.startsWith('/messages')) {
+        if (req.path === '/sse') {
           res.header('Access-Control-Allow-Origin', '*');
           res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
           res.header(
             'Access-Control-Allow-Headers',
             'Content-Type, Authorization, mcp-protocol-version'
           );
+          res.header('Cache-Control', 'no-cache, no-transform');
         } else {
           res.header('Access-Control-Allow-Origin', '*');
           res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -562,7 +563,7 @@ class MicrosoftGraphServer {
         logger.info(
           `  - OAuth discovery: http://localhost:${port}/.well-known/oauth-authorization-server`
         );
-        logger.info('MCP SSE open at /sse (no HTTP auth); Graph tools require in-app login.');
+        console.log("MCP SSE ready at /sse; tools/list available pre-auth; tool execution gated behind login.");
       });
     } else {
       const transport = new StdioServerTransport();
